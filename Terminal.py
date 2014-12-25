@@ -101,16 +101,6 @@ class TerminalSelector():
 
 
 class TerminalCommand():
-    def get_path(self, paths):
-        if paths:
-            return paths[0]
-        elif self.window.active_view():
-            return self.window.active_view().file_name()
-        elif self.window.folders():
-            return self.window.folders()[0]
-        else:
-            sublime.error_message('Terminal: No place to open terminal to')
-            return False
 
     def run_terminal(self, dir_, parameters):
         try:
@@ -135,10 +125,29 @@ class TerminalCommand():
         except (Exception) as exception:
             sublime.error_message('Terminal: ' + str(exception))
 
+    def _get_file_path(self):
+        try:
+            return self.view.file_name()
+        except AttributeError:
+            return None
 
-class OpenTerminalCommand(sublime_plugin.WindowCommand, TerminalCommand):
-    def run(self, paths=[], parameters=None):
-        path = self.get_path(paths)
+    def _get_project_path(self):
+        data = self.view.window().project_data()
+        if not data:
+            return None
+        return data.get('folders', [{}])[0].get('path', None)
+
+    def _get_current_folder(self):
+        current_filepath = self._get_file_path()
+        if current_filepath:
+            return os.path.dirname(current_filepath)
+        else:
+            return self._get_project_path()
+
+
+class OpenTerminalCommand(sublime_plugin.TextCommand, TerminalCommand):
+    def run(self, edit, parameters=None):
+        path = self._get_current_folder()
         if not path:
             return
 
@@ -155,14 +164,20 @@ class OpenTerminalCommand(sublime_plugin.WindowCommand, TerminalCommand):
         self.run_terminal(path, parameters)
 
 
-class OpenTerminalProjectFolderCommand(sublime_plugin.WindowCommand,
-        TerminalCommand):
-    def run(self, paths=[], parameters=None):
-        path = self.get_path(paths)
+class OpenTerminalProjectFolderCommand(sublime_plugin.TextCommand, TerminalCommand):
+    def run(self, edit, parameters=None):
+        path = self._get_project_path()
         if not path:
             return
 
-        folders = [x for x in self.window.folders() if path.find(x) == 0][0:1]
+        if parameters == None:
+            settings = sublime.load_settings('Terminal.sublime-settings')
+            parameters = settings.get('parameters')
 
-        command = OpenTerminalCommand(self.window)
-        command.run(folders, parameters=parameters)
+        if not parameters:
+            parameters = []
+
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+
+        self.run_terminal(path, parameters)
